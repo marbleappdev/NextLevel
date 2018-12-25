@@ -1419,7 +1419,7 @@ extension NextLevel {
             return .off
         }
         set {
-            self.executeClosureSyncOnSessionQueueIfNecessary {
+            self.executeClosureAsyncOnSessionQueueIfNecessary {
                 guard let _ = self._captureSession,
                     let videoOutput = self._videoOutput
                     else {
@@ -2472,7 +2472,7 @@ extension NextLevel {
     
     /// Initiates video recording, managed as a clip within the 'NextLevelSession'
     public func record() {
-        self.executeClosureSyncOnSessionQueueIfNecessary {
+        self.executeClosureAsyncOnSessionQueueIfNecessary {
             self.delegate?.nextLevelWillStartRecording(self)
             
             if let audioSession = self._audioCaptureSession,
@@ -2495,7 +2495,7 @@ extension NextLevel {
     /// - Parameter completionHandler: Completion handler for when pause completes
     public func pause(withCompletionHandler completionHandler: (() -> Void)? = nil) {
         self._recording = false
-        
+
         self.executeClosureAsyncOnSessionQueueIfNecessary {
             if let audioSession = self._audioCaptureSession,
                 audioSession.inputs.contains(self._audioInput!) {
