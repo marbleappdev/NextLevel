@@ -62,15 +62,30 @@ public protocol NextLevelDelegate: AnyObject {
     // session
     func nextLevelSessionWillStart(_ nextLevel: NextLevel)
     func nextLevelSessionDidStart(_ nextLevel: NextLevel)
+    func nextLevelSessionWillStop(_ nextLevel: NextLevel)
     func nextLevelSessionDidStop(_ nextLevel: NextLevel)
     
     // session interruption
     func nextLevelSessionWasInterrupted(_ nextLevel: NextLevel)
     func nextLevelSessionInterruptionEnded(_ nextLevel: NextLevel)
     
+    // audio session
+    func nextLevelAudioSessionWillStart(_ nextLevel: NextLevel)
+    func nextLevelAudioSessionDidStart(_ nextLevel: NextLevel)
+    func nextLevelAudioSessionWillStop(_ nextLevel: NextLevel)
+    func nextLevelAudioSessionDidStop(_ nextLevel: NextLevel)
+    
+    // audio session interruption
+    func nextLevelAudioSessionWasInterrupted(_ nextLevel: NextLevel)
+    func nextLevelAudioSessionInterruptionEnded(_ nextLevel: NextLevel)
+    
     // mode
     func nextLevelCaptureModeWillChange(_ nextLevel: NextLevel)
     func nextLevelCaptureModeDidChange(_ nextLevel: NextLevel)
+    
+    // recording
+    func nextLevelWillStartRecording(_ nextLevel: NextLevel)
+    func nextLevelDidPauseRecording(_ nextLevel: NextLevel)
 }
 
 /// Preview delegate, provides update for

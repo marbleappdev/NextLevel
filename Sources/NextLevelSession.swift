@@ -464,6 +464,12 @@ extension NextLevelSession {
     public func appendAudio(withSampleBuffer sampleBuffer: CMSampleBuffer, completionHandler: @escaping NextLevelSessionAppendSampleBufferCompletionHandler) {
         self.startSessionIfNecessary(timestamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
         
+        if let audioConfig = self._audioConfiguration {
+            if audioConfig.muted {
+                self._muteAudio(sampleBuffer: sampleBuffer)
+            }
+        }
+        
         let duration = CMSampleBufferGetDuration(sampleBuffer)
         if let adjustedBuffer = CMSampleBuffer.createSampleBuffer(fromSampleBuffer: sampleBuffer, withTimeOffset: self._timeOffset, duration: duration) {
             let presentationTimestamp = CMSampleBufferGetPresentationTimeStamp(adjustedBuffer)
@@ -550,30 +556,32 @@ extension NextLevelSession {
                                 }
                             }
                         } else {
+                            let semaphore = DispatchSemaphore(value: 0)
                             //print("ending session \(CMTimeGetSeconds(self._currentClipDuration))")
                             writer.endSession(atSourceTime: CMTimeAdd(self._currentClipDuration, self._startTimestamp))
                             writer.finishWriting(completionHandler: {
-                                self.executeClosureSyncOnSessionQueueIfNecessary {
-                                    var clip: NextLevelClip? = nil
-                                    let url = writer.outputURL
-                                    let error = writer.error
-                                    
-                                    if error == nil {
-                                        clip = NextLevelClip(url: url, infoDict: nil)
-                                        if let clip = clip {
-                                            self.add(clip: clip)
-                                        }
-                                    }
-                                    
-                                    self.destroyWriter()
-                                    
-                                    if let completionHandler = completionHandler {
-                                        DispatchQueue.main.async {
-                                            completionHandler(clip, error)
-                                        }
+                                var clip: NextLevelClip? = nil
+                                let url = writer.outputURL
+                                let error = writer.error
+                                
+                                if error == nil {
+                                    clip = NextLevelClip(url: url, infoDict: nil)
+                                    if let clip = clip {
+                                        self.add(clip: clip)
                                     }
                                 }
+                                
+                                self.destroyWriter()
+                                
+                                if let completionHandler = completionHandler {
+                                    DispatchQueue.main.async {
+                                        completionHandler(clip, error)
+                                    }
+                                }
+
+                                semaphore.signal()
                             })
+                            semaphore.wait()
                             return
                         }
                     }
@@ -844,6 +852,30 @@ extension NextLevelSession {
             } catch {
                 print("NextLevel, could not remove file at path")
             }
+        }
+    }
+}
+
+// MARK: - clip editing (internal)
+
+extension NextLevelSession {
+    
+    internal func _muteAudio(sampleBuffer: CMSampleBuffer) {
+        let blockBuffer: CMBlockBuffer? = CMSampleBufferGetDataBuffer(sampleBuffer)
+        var length: size_t = 0
+        var totalLength: size_t = 0
+        var samples: UnsafeMutablePointer<Int8>? = nil
+        
+        let state = CMBlockBufferGetDataPointer(
+            blockBuffer!,
+            atOffset: 0,
+            lengthAtOffsetOut: &length,
+            totalLengthOut: &totalLength,
+            dataPointerOut: &samples
+        )
+        
+        if state == noErr {
+            CMBlockBufferFillDataBytes(with: 0, blockBuffer: blockBuffer!, offsetIntoDestination: 0, dataLength: length)
         }
     }
 }

@@ -33,6 +33,7 @@ public let NextLevelClipFilenameKey = "NextLevelClipFilenameKey"
 public let NextLevelClipInfoDictKey = "NextLevelClipInfoDictKey"
 
 /// NextLevelClip, an object for managing a single media clip
+@objcMembers
 public class NextLevelClip {
 
     /// Unique identifier for a clip

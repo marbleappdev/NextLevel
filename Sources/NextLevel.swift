@@ -262,6 +262,9 @@ public class NextLevel: NSObject {
     /// Indicates whether the capture session automatically changes settings in the app’s shared audio session. By default, is `true`.
     public var automaticallyConfiguresApplicationAudioSession: Bool = true
     
+    /// When `true` microphone would be activated only during recording
+    public var useSeparateCaptureSessionForAudio: Bool = false
+    
     // camera configuration
     
     /// The current capture mode of the device.
@@ -396,6 +399,7 @@ public class NextLevel: NSObject {
     // AVFoundation
     
     internal var _captureSession: AVCaptureSession?
+    internal var _audioCaptureSession: AVCaptureSession?
     
     internal var _videoInput: AVCaptureDeviceInput?
     internal var _audioInput: AVCaptureDeviceInput?
@@ -483,6 +487,13 @@ public class NextLevel: NSObject {
             self.commitConfiguration()
         }
         
+        if let audioSession = self._audioCaptureSession {
+            self.beginConfiguration()
+            self.removeInputs(session: audioSession)
+            self.removeOutputs(session: audioSession)
+            self.commitConfiguration()
+        }
+        
         self.previewLayer.session = nil
         
         self._currentDevice = nil
@@ -490,6 +501,7 @@ public class NextLevel: NSObject {
         
         self._recordingSession = nil
         self._captureSession = nil
+        self._audioCaptureSession = nil
     }
 }
 
@@ -580,6 +592,7 @@ extension NextLevel {
         if let session = self._captureSession {
             self.executeClosureAsyncOnSessionQueueIfNecessary {
                 if session.isRunning == true {
+                    self.delegate?.nextLevelSessionWillStop(self)
                     session.stopRunning()
                 }
                 
@@ -587,10 +600,26 @@ extension NextLevel {
                 self.removeInputs(session: session)
                 self.removeOutputs(session: session)
                 self.commitConfiguration()
+                self.removeSessionObservers()
                 
                 self._recordingSession = nil
                 self._captureSession = nil
                 self._currentDevice = nil
+                
+                if let audioSession = self._audioCaptureSession {
+                    if audioSession.isRunning == true {
+                        self.delegate?.nextLevelAudioSessionWillStop(self)
+                        audioSession.stopRunning()
+                    }
+                    
+                    self.beginConfiguration()
+                    self.removeInputs(session: audioSession)
+                    self.removeOutputs(session: audioSession)
+                    self.commitConfiguration()
+                    self.removeAudioSessionObservers()
+                    
+                    self._audioCaptureSession = nil
+                }
             }
         }
         
@@ -613,6 +642,13 @@ extension NextLevel {
             // setup AV capture sesssion
             self._captureSession = AVCaptureSession()
             self._sessionConfigurationCount = 0
+            self.addSessionObservers()
+            
+            if self.useSeparateCaptureSessionForAudio {
+                self._audioCaptureSession = AVCaptureSession()
+                self._audioCaptureSession?.automaticallyConfiguresApplicationAudioSession = self.automaticallyConfiguresApplicationAudioSession
+                self.addAudioSessionObservers()
+            }
             
             // setup NL recording session
             self._recordingSession = NextLevelSession(queue: self._sessionQueue, queueKey: NextLevelCaptureSessionQueueSpecificKey)
@@ -636,6 +672,13 @@ extension NextLevel {
                     self.previewDelegate?.nextLevelWillStartPreview(self)
                     
                     // nextLevelSessionDidStart is called from AVFoundation
+                }
+                
+                if let audioSession = self._audioCaptureSession {
+                    if audioSession.isRunning == false {
+                        self.delegate?.nextLevelAudioSessionWillStart(self)
+                        audioSession.startRunning()
+                    }
                 }
             }
         }
@@ -697,6 +740,10 @@ extension NextLevel {
         self._sessionConfigurationCount += 1
         if self._sessionConfigurationCount == 1 {
             session.beginConfiguration()
+            
+            if let audioSession = self._audioCaptureSession {
+                audioSession.beginConfiguration()
+            }
         }
     }
     
@@ -708,6 +755,10 @@ extension NextLevel {
         self._sessionConfigurationCount -= 1
         if self._sessionConfigurationCount == 0 {
             session.commitConfiguration()
+            
+            if let audioSession = self._audioCaptureSession {
+                audioSession.commitConfiguration()
+            }
         }
     }
     
@@ -900,9 +951,11 @@ extension NextLevel {
     // inputs
     
     private func configureDevice(captureDevice: AVCaptureDevice, mediaType: AVMediaType) {
+        guard let session = self._captureSession else {
+            return
+        }
         
-        if let session = self._captureSession,
-            let currentDeviceInput = AVCaptureDeviceInput.deviceInput(withMediaType: mediaType, captureSession: session) {
+        if let currentDeviceInput = AVCaptureDeviceInput.deviceInput(withMediaType: mediaType, captureSession: session) {
             if currentDeviceInput.device == captureDevice {
                 return
             }
@@ -939,7 +992,19 @@ extension NextLevel {
             }
         }
         
-        if let session = self._captureSession {
+        if let audioSession = self._audioCaptureSession, mediaType == .audio {
+            if let currentDeviceInput = AVCaptureDeviceInput.deviceInput(withMediaType: mediaType, captureSession: audioSession) {
+                session.removeInput(currentDeviceInput)
+            }
+            
+            do {
+                let input = try AVCaptureDeviceInput(device: captureDevice)
+                self._audioInput = input
+            } catch  {
+                print("NextLevel, failure adding input device")
+            }
+        }
+        else {
             if let currentDeviceInput = AVCaptureDeviceInput.deviceInput(withMediaType: mediaType, captureSession: session) {
                 session.removeInput(currentDeviceInput)
                 if currentDeviceInput.device.hasMediaType(AVMediaType.video) {
@@ -979,10 +1044,11 @@ extension NextLevel {
                 session.removeInput(input)
                 if input.device.hasMediaType(AVMediaType.video) {
                     self.removeCaptureDeviceObservers(input.device)
+                    self._videoInput = nil
+                } else {
+                    self._audioInput = nil
                 }
             }
-            self._videoInput = nil
-            self._audioInput = nil
         }
     }
     
@@ -1029,11 +1095,20 @@ extension NextLevel {
     
     private func addAudioOuput() -> Bool {
         
+        var sessionOptional: AVCaptureSession? = self._captureSession
+        if let _ = self._audioCaptureSession {
+            sessionOptional = self._audioCaptureSession
+        }
+        guard let session = sessionOptional else {
+            print("NextLevel, couldn't add audio output to session")
+            return false
+        }
+        
         if self._audioOutput == nil {
             self._audioOutput = AVCaptureAudioDataOutput()
         }
         
-        if let session = self._captureSession, let audioOutput = self._audioOutput {
+        if let audioOutput = self._audioOutput {
             if session.canAddOutput(audioOutput) {
                 session.addOutput(audioOutput)
                 audioOutput.setSampleBufferDelegate(self, queue: self._sessionQueue)
@@ -1283,7 +1358,7 @@ extension NextLevel {
         }
         
         var didChangeOrientation = false
-        let currentOrientation = AVCaptureVideoOrientation.avorientationFromUIDeviceOrientation(UIDevice.current.orientation)
+        let currentOrientation = AVCaptureVideoOrientation.portrait
         
         if let previewConnection = self.previewLayer.connection {
             if previewConnection.isVideoOrientationSupported && previewConnection.videoOrientation != currentOrientation {
@@ -2105,7 +2180,14 @@ extension NextLevel {
     /// - Parameters:
     ///   - frameRate: Desired frame rate.
     ///   - dimensions: Desired video dimensions.
+    
     public func updateDeviceFormat(withFrameRate frameRate: CMTimeScale, dimensions: CMVideoDimensions) {
+        self.executeClosureAsyncOnSessionQueueIfNecessary {
+            self.updateDeviceFormatSync(withFrameRate: frameRate, dimensions: dimensions)
+        }
+    }
+    
+    public func updateDeviceFormatSync(withFrameRate frameRate: CMTimeScale, dimensions: CMVideoDimensions) {
         self.executeClosureAsyncOnSessionQueueIfNecessary {
             guard let device = self._currentDevice else {
                 return
@@ -2214,6 +2296,37 @@ extension NextLevel {
                     } catch {
                         print("NextLevel, zoomFactor failed to lock device for configuration")
                     }
+                }
+            }
+        }
+    }
+    
+    public func ramp(toVideoZoomFactor factor: CGFloat, withRate rate: Float) {
+        self.executeClosureAsyncOnSessionQueueIfNecessary {
+            if let device = self._currentDevice {
+                do {
+                    try device.lockForConfiguration()
+                    
+                    let zoom: Float = max(1, min(Float(factor), Float(device.activeFormat.videoMaxZoomFactor)))
+                    device.ramp(toVideoZoomFactor: CGFloat(zoom), withRate: rate)
+                    
+                    device.unlockForConfiguration()
+                } catch {
+                    print("NextLevel, ramp(toVideoZoomFactor:) failed to lock device for configuration")
+                }
+            }
+        }
+    }
+    
+    public func cancelVideoZoomRamp() {
+        self.executeClosureAsyncOnSessionQueueIfNecessary {
+            if let device = self._currentDevice {
+                do {
+                    try device.lockForConfiguration()
+                    device.cancelVideoZoomRamp()
+                    device.unlockForConfiguration()
+                } catch {
+                    print("NextLevel, cancelVideoZoomRamp failed to lock device for configuration")
                 }
             }
         }
@@ -2357,6 +2470,15 @@ extension NextLevel {
     /// Initiates video recording, managed as a clip within the 'NextLevelSession'
     public func record() {
         self.executeClosureSyncOnSessionQueueIfNecessary {
+            self.delegate?.nextLevelWillStartRecording(self)
+            
+            if let audioSession = self._audioCaptureSession,
+                audioSession.canAddInput(self._audioInput!) {
+                audioSession.beginConfiguration()
+                audioSession.addInput(self._audioInput!)
+                audioSession.commitConfiguration()
+            }
+            
             self._recording = true
             if let _ = self._recordingSession {
                 self.beginRecordingNewClipIfNecessary()
@@ -2371,6 +2493,13 @@ extension NextLevel {
         self._recording = false
         
         self.executeClosureAsyncOnSessionQueueIfNecessary {
+            if let audioSession = self._audioCaptureSession,
+                audioSession.inputs.contains(self._audioInput!) {
+                audioSession.beginConfiguration()
+                audioSession.removeInput(self._audioInput!)
+                audioSession.commitConfiguration()
+            }
+            
             if let session = self._recordingSession {
                 if session.currentClipHasStarted {
                     session.endClip(completionHandler: { (sessionClip: NextLevelClip?, error: Error?) in
@@ -2394,6 +2523,8 @@ extension NextLevel {
             } else if let completionHandler = completionHandler {
                 DispatchQueue.main.async(execute: completionHandler)
             }
+            
+            self.delegate?.nextLevelDidPauseRecording(self)
         }
     }
     
@@ -2476,7 +2607,7 @@ extension NextLevel {
             }
         }
         
-        if self._recording && (session.isAudioSetup || self.captureMode == .videoWithoutAudio) && session.currentClipHasStarted {
+        if self._recording && (session.isAudioSetup || self.captureMode == .videoWithoutAudio || (self._audioCaptureSession != nil && self._audioCaptureSession!.isInterrupted)) && session.currentClipHasStarted {
             self.beginRecordingNewClipIfNecessary()
             
             let minTimeBetweenFrames = 0.004
@@ -3045,6 +3176,69 @@ extension NextLevel {
     @objc public func handleSessionInterruptionEnded(_ notification: Notification) {
         DispatchQueue.main.async {
             self.delegate?.nextLevelSessionInterruptionEnded(self)
+        }
+    }
+    
+    // audio session
+    
+    internal func addAudioSessionObservers() {
+        NotificationCenter.default.addObserver(self, selector: #selector(NextLevel.handleAudioSessionDidStartRunning(_:)), name: .AVCaptureSessionDidStartRunning, object: self._audioCaptureSession)
+        NotificationCenter.default.addObserver(self, selector: #selector(NextLevel.handleAudioSessionDidStopRunning(_:)), name: .AVCaptureSessionDidStopRunning, object: self._audioCaptureSession)
+        NotificationCenter.default.addObserver(self, selector: #selector(NextLevel.handleAudioSessionRuntimeError(_:)), name: .AVCaptureSessionRuntimeError, object: self._audioCaptureSession)
+        NotificationCenter.default.addObserver(self, selector: #selector(NextLevel.handleAudioSessionWasInterrupted(_:)), name: .AVCaptureSessionWasInterrupted, object: self._audioCaptureSession)
+        NotificationCenter.default.addObserver(self, selector: #selector(NextLevel.handleAudioSessionInterruptionEnded(_:)), name: .AVCaptureSessionInterruptionEnded, object: self._audioCaptureSession)
+    }
+    
+    internal func removeAudioSessionObservers() {
+        NotificationCenter.default.removeObserver(self, name: .AVCaptureSessionDidStartRunning, object: self._audioCaptureSession)
+        NotificationCenter.default.removeObserver(self, name: .AVCaptureSessionDidStopRunning, object: self._audioCaptureSession)
+        NotificationCenter.default.removeObserver(self, name: .AVCaptureSessionRuntimeError, object: self._audioCaptureSession)
+        NotificationCenter.default.removeObserver(self, name: .AVCaptureSessionWasInterrupted, object: self._audioCaptureSession)
+        NotificationCenter.default.removeObserver(self, name: .AVCaptureSessionInterruptionEnded, object: self._audioCaptureSession)
+    }
+    
+    @objc internal func handleAudioSessionDidStartRunning(_ notification: Notification) {
+        DispatchQueue.main.async {
+            self.delegate?.nextLevelAudioSessionDidStart(self)
+        }
+    }
+    
+    @objc internal func handleAudioSessionDidStopRunning(_ notification: Notification) {
+        DispatchQueue.main.async {
+            self.delegate?.nextLevelAudioSessionDidStop(self)
+        }
+    }
+    
+    @objc internal func handleAudioSessionRuntimeError(_ notification: Notification) {
+        self.executeClosureAsyncOnSessionQueueIfNecessary {
+            if let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError {
+                switch error.code {
+                case .deviceIsNotAvailableInBackground:
+                    print("NextLevel, error, media services are not available in the background")
+                    break
+                case .mediaServicesWereReset:
+                    fallthrough
+                default:
+                    // TODO reset capture
+                    break
+                }
+            }
+        }
+    }
+    
+    @objc public func handleAudioSessionWasInterrupted(_ notification: Notification) {
+        DispatchQueue.main.async {
+            if self._recording == true {
+                self.delegate?.nextLevelAudioSessionDidStop(self)
+            }
+            
+            self.delegate?.nextLevelAudioSessionWasInterrupted(self)
+        }
+    }
+    
+    @objc public func handleAudioSessionInterruptionEnded(_ notification: Notification) {
+        DispatchQueue.main.async {
+            self.delegate?.nextLevelAudioSessionInterruptionEnded(self)
         }
     }
     

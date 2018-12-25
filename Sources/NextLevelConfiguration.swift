@@ -204,7 +204,7 @@ public class NextLevelVideoConfiguration: NextLevelConfiguration {
             config[AVVideoHeightKey] = NSNumber(integerLiteral: Int(height))
         }
         
-        config = update(config: config)
+        config = update(config: config, withSizeValuesDivisibleBy: 4)
         
         config[AVVideoCodecKey] = self.codec
         
@@ -212,8 +212,12 @@ public class NextLevelVideoConfiguration: NextLevelConfiguration {
             config[AVVideoScalingModeKey] = scalingMode
         }
         
+        let numPixels = (config[AVVideoWidthKey] as! Int) * (config[AVVideoHeightKey] as! Int)
+        let bitsPerPixel = 10.1 // This bitrate approximately matches the quality produced by AVCaptureSessionPresetHigh.
+        let bitsPerSecond = Int(Double(numPixels) * bitsPerPixel)
+        
         var compressionDict: [String : Any] = [:]
-        compressionDict[AVVideoAverageBitRateKey] = NSNumber(integerLiteral: self.bitRate)
+        compressionDict[AVVideoAverageBitRateKey] = NSNumber(integerLiteral: bitsPerSecond)
         compressionDict[AVVideoAllowFrameReorderingKey] = NSNumber(booleanLiteral: false)
         compressionDict[AVVideoExpectedSourceFrameRateKey] = NSNumber(integerLiteral: 30)
         if let profileLevel = self.profileLevel {
@@ -277,6 +281,9 @@ public class NextLevelAudioConfiguration: NextLevelConfiguration {
     /// https://developer.apple.com/reference/coreaudio/1613060-core_audio_data_types
     public var format: AudioFormatID = kAudioFormatMPEG4AAC
 
+    /// Mute audio
+    public var muted: Bool = false
+    
     // MARK: - object lifecycle
     
     public override init() {
