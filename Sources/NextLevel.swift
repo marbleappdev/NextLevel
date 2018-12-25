@@ -303,7 +303,7 @@ public class NextLevel: NSObject {
             }
         }
     }
-    
+
     /// When `true` actives device orientation updates
     public var automaticallyUpdatesDeviceOrientation: Bool = false
     
@@ -591,20 +591,6 @@ extension NextLevel {
     public func stop() {
         if let session = self._captureSession {
             self.executeClosureAsyncOnSessionQueueIfNecessary {
-                if session.isRunning == true {
-                    self.delegate?.nextLevelSessionWillStop(self)
-                    session.stopRunning()
-                }
-                
-                self.beginConfiguration()
-                self.removeInputs(session: session)
-                self.removeOutputs(session: session)
-                self.commitConfiguration()
-                self.removeSessionObservers()
-                
-                self._recordingSession = nil
-                self._captureSession = nil
-                self._currentDevice = nil
                 
                 if let audioSession = self._audioCaptureSession {
                     if audioSession.isRunning == true {
@@ -620,6 +606,21 @@ extension NextLevel {
                     
                     self._audioCaptureSession = nil
                 }
+                
+                if session.isRunning == true {
+                    self.delegate?.nextLevelSessionWillStop(self)
+                    session.stopRunning()
+                }
+                
+                self.beginConfiguration()
+                self.removeInputs(session: session)
+                self.removeOutputs(session: session)
+                self.commitConfiguration()
+                self.removeSessionObservers()
+                
+                self._recordingSession = nil
+                self._captureSession = nil
+                self._currentDevice = nil
             }
         }
         
@@ -1418,51 +1419,53 @@ extension NextLevel {
             return .off
         }
         set {
-            guard let _ = self._captureSession,
-                let videoOutput = self._videoOutput
-                else {
-                    return
-            }
-            
-            switch newValue {
-            case .off:
-                if let vc = videoOutput.connection(with: AVMediaType.video) {
-                    if vc.isVideoMirroringSupported {
-                        vc.isVideoMirrored = false
-                    }
+            self.executeClosureSyncOnSessionQueueIfNecessary {
+                guard let _ = self._captureSession,
+                    let videoOutput = self._videoOutput
+                    else {
+                        return
                 }
-                if let pc = self.previewLayer.connection {
-                    if pc.isVideoMirroringSupported {
-                        pc.automaticallyAdjustsVideoMirroring = false
-                        pc.isVideoMirrored = false
+
+                switch newValue {
+                case .off:
+                    if let vc = videoOutput.connection(with: AVMediaType.video) {
+                        if vc.isVideoMirroringSupported {
+                            vc.isVideoMirrored = false
+                        }
                     }
-                }
-                break
-            case .on:
-                if let vc = videoOutput.connection(with: AVMediaType.video) {
-                    if vc.isVideoMirroringSupported {
-                        vc.isVideoMirrored = true
+                    if let pc = self.previewLayer.connection {
+                        if pc.isVideoMirroringSupported {
+                            pc.automaticallyAdjustsVideoMirroring = false
+                            pc.isVideoMirrored = false
+                        }
                     }
-                }
-                if let pc = self.previewLayer.connection {
-                    if pc.isVideoMirroringSupported {
-                        pc.automaticallyAdjustsVideoMirroring = false
-                        pc.isVideoMirrored = true
+                    break
+                case .on:
+                    if let vc = videoOutput.connection(with: AVMediaType.video) {
+                        if vc.isVideoMirroringSupported {
+                            vc.isVideoMirrored = true
+                        }
                     }
-                }
-                break
-            case .auto:
-                if let vc = videoOutput.connection(with: AVMediaType.video), let device = self._currentDevice {
-                    if vc.isVideoMirroringSupported {
-                        vc.isVideoMirrored = (device.position == .front)
+                    if let pc = self.previewLayer.connection {
+                        if pc.isVideoMirroringSupported {
+                            pc.automaticallyAdjustsVideoMirroring = false
+                            pc.isVideoMirrored = true
+                        }
                     }
-                }
-                if let pc = self.previewLayer.connection {
-                    if pc.isVideoMirroringSupported {
-                        pc.automaticallyAdjustsVideoMirroring = true
+                    break
+                case .auto:
+                    if let vc = videoOutput.connection(with: AVMediaType.video), let device = self._currentDevice {
+                        if vc.isVideoMirroringSupported {
+                            vc.isVideoMirrored = (device.position == .front)
+                        }
                     }
+                    if let pc = self.previewLayer.connection {
+                        if pc.isVideoMirroringSupported {
+                            pc.automaticallyAdjustsVideoMirroring = true
+                        }
+                    }
+                    break
                 }
-                break
             }
         }
     }
@@ -2479,10 +2482,11 @@ extension NextLevel {
                 audioSession.commitConfiguration()
             }
             
+            /* beginRecordingNewClipIfNecessary will be called from handleVideoOutput */
             self._recording = true
-            if let _ = self._recordingSession {
-                self.beginRecordingNewClipIfNecessary()
-            }
+//            if let _ = self._recordingSession {
+//                self.beginRecordingNewClipIfNecessary()
+//            }
         }
     }
     
@@ -2607,9 +2611,9 @@ extension NextLevel {
             }
         }
         
-        if self._recording && (session.isAudioSetup || self.captureMode == .videoWithoutAudio || (self._audioCaptureSession != nil && self._audioCaptureSession!.isInterrupted)) && session.currentClipHasStarted {
+        if self._recording && (session.isAudioSetup || (self.captureMode == .videoWithoutAudio) || (self._audioCaptureSession != nil && self._audioCaptureSession!.isInterrupted)) {
             self.beginRecordingNewClipIfNecessary()
-            
+
             let minTimeBetweenFrames = 0.004
             let sleepDuration = minTimeBetweenFrames - (CACurrentMediaTime() - self._lastVideoFrameTimeInterval)
             if sleepDuration > 0 {
@@ -2752,9 +2756,9 @@ extension NextLevel {
             }
         }
         
-        if self._recording && session.isVideoSetup && session.currentClipHasStarted && session.currentClipHasVideo {
+        if self._recording && session.isVideoSetup && session.currentClipHasVideo {
             self.beginRecordingNewClipIfNecessary()
-            
+
             session.appendAudio(withSampleBuffer: sampleBuffer, completionHandler: { (success: Bool) -> Void in
                 if success {
                     DispatchQueue.main.async {

@@ -567,7 +567,7 @@ extension NextLevelSession {
                                 if error == nil {
                                     clip = NextLevelClip(url: url, infoDict: nil)
                                     if let clip = clip {
-                                        self.add(clip: clip)
+                                        self._add(clip: clip)
                                     }
                                 }
                                 
@@ -622,8 +622,7 @@ extension NextLevelSession {
     /// - Parameter clip: Clip to be added
     public func add(clip: NextLevelClip) {
         self.executeClosureSyncOnSessionQueueIfNecessary {
-            self._clips.append(clip)
-            self._totalDuration = CMTimeAdd(self._totalDuration, clip.duration)
+            self._add(clip: clip)
         }
     }
     
@@ -859,6 +858,11 @@ extension NextLevelSession {
 // MARK: - clip editing (internal)
 
 extension NextLevelSession {
+    
+    internal func _add(clip: NextLevelClip) {
+        self._clips.append(clip)
+        self._totalDuration = CMTimeAdd(self._totalDuration, clip.duration)
+    }
     
     internal func _muteAudio(sampleBuffer: CMSampleBuffer) {
         let blockBuffer: CMBlockBuffer? = CMSampleBufferGetDataBuffer(sampleBuffer)

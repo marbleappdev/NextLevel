@@ -33,7 +33,7 @@ import ARKit
 // MARK: - MediaTypeConfiguration
 
 /// NextLevelConfiguration, media capture configuration object
-public class NextLevelConfiguration {
+public class NextLevelConfiguration: NSObject  {
 
     /// AVFoundation configuration preset, see AVCaptureSession.h
     public var preset: AVCaptureSession.Preset
@@ -43,9 +43,10 @@ public class NextLevelConfiguration {
     
     // MARK: - object lifecycle
     
-    public init() {
+    override init() {
         self.preset = AVCaptureSession.Preset.high
         self.options = nil
+        super.init()
     }
     
     // MARK: - func

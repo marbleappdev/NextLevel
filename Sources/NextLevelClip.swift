@@ -34,7 +34,7 @@ public let NextLevelClipInfoDictKey = "NextLevelClipInfoDictKey"
 
 /// NextLevelClip, an object for managing a single media clip
 @objcMembers
-public class NextLevelClip {
+public class NextLevelClip: NSObject  {
 
     /// Unique identifier for a clip
     public var uuid: UUID {
