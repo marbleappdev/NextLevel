@@ -2191,57 +2191,54 @@ extension NextLevel {
     }
     
     public func updateDeviceFormatSync(withFrameRate frameRate: CMTimeScale, dimensions: CMVideoDimensions) {
-        self.executeClosureAsyncOnSessionQueueIfNecessary {
-            guard let device = self._currentDevice else {
-                return
-            }
-            
-            var updatedFormat: AVCaptureDevice.Format? = nil
-            for currentFormat in device.formats {
-                if currentFormat.isSupported(withFrameRate: frameRate, dimensions: dimensions) {
-                    if updatedFormat == nil {
-                        updatedFormat = currentFormat
-                    } else if let updated = updatedFormat {
-                        let currentDimensions = CMVideoFormatDescriptionGetDimensions(currentFormat.formatDescription)
-                        let updatedDimensions = CMVideoFormatDescriptionGetDimensions(updated.formatDescription)
-                        
-                        if currentDimensions.width < updatedDimensions.width && currentDimensions.height < updatedDimensions.height {
-                            updatedFormat = currentFormat
-                        } else if currentDimensions.width == updatedDimensions.width && currentDimensions.height == updatedDimensions.height {
-                            
-                            let currentFrameRate = AVCaptureDevice.Format.maxFrameRate(forFormat: currentFormat, minFrameRate: frameRate)
-                            let updatedFrameRate = AVCaptureDevice.Format.maxFrameRate(forFormat: updated, minFrameRate: frameRate)
-                            
-                            if updatedFrameRate > currentFrameRate {
-                                updatedFormat = currentFormat
-                            }
-                        }
-                        
-                    }
-                }
-            }
-            
-            if let format = updatedFormat {
-                do {
-                    try device.lockForConfiguration()
-                    device.activeFormat = format
-                    if device.activeFormat.isSupported(withFrameRate: frameRate) {
-                        let fps: CMTime = CMTimeMake(value: 1, timescale: frameRate)
-                        device.activeVideoMaxFrameDuration = fps
-                        device.activeVideoMinFrameDuration = fps
-                    }
-                    device.unlockForConfiguration()
+        guard let device = self._currentDevice else {
+            return
+        }
+
+        var updatedFormat: AVCaptureDevice.Format? = nil
+        for currentFormat in device.formats {
+            if currentFormat.isSupported(withFrameRate: frameRate, dimensions: dimensions) {
+                if updatedFormat == nil {
+                    updatedFormat = currentFormat
+                } else if let updated = updatedFormat {
+                    let currentDimensions = CMVideoFormatDescriptionGetDimensions(currentFormat.formatDescription)
+                    let updatedDimensions = CMVideoFormatDescriptionGetDimensions(updated.formatDescription)
                     
-                    DispatchQueue.main.async {
-                        self.deviceDelegate?.nextLevel(self, didChangeDeviceFormat: format)
+                    if currentDimensions.width < updatedDimensions.width && currentDimensions.height < updatedDimensions.height {
+                        updatedFormat = currentFormat
+                    } else if currentDimensions.width == updatedDimensions.width && currentDimensions.height == updatedDimensions.height {
+                        
+                        let currentFrameRate = AVCaptureDevice.Format.maxFrameRate(forFormat: currentFormat, minFrameRate: frameRate)
+                        let updatedFrameRate = AVCaptureDevice.Format.maxFrameRate(forFormat: updated, minFrameRate: frameRate)
+                        
+                        if updatedFrameRate > currentFrameRate {
+                            updatedFormat = currentFormat
+                        }
                     }
-                } catch {
-                    print("NextLevel, active device format failed to lock device for configuration")
+                    
                 }
-            } else {
-                print("Nextlevel, could not find a current device format matching the requirements")
             }
-            
+        }
+        
+        if let format = updatedFormat {
+            do {
+                try device.lockForConfiguration()
+                device.activeFormat = format
+                if device.activeFormat.isSupported(withFrameRate: frameRate) {
+                    let fps: CMTime = CMTimeMake(value: 1, timescale: frameRate)
+                    device.activeVideoMaxFrameDuration = fps
+                    device.activeVideoMinFrameDuration = fps
+                }
+                device.unlockForConfiguration()
+                
+                DispatchQueue.main.async {
+                    self.deviceDelegate?.nextLevel(self, didChangeDeviceFormat: format)
+                }
+            } catch {
+                print("NextLevel, active device format failed to lock device for configuration")
+            }
+        } else {
+            print("Nextlevel, could not find a current device format matching the requirements")
         }
     }
 }
