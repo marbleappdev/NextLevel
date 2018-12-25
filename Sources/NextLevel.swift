@@ -476,7 +476,6 @@ public class NextLevel: NSObject {
         self.metadataObjectsDelegate = nil
         
         self.removeApplicationObservers()
-        self.removeSessionObservers()
         self.removeDeviceObservers()
         
         if let session = self._captureSession {
