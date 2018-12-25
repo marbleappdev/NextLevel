@@ -460,7 +460,6 @@ public class NextLevel: NSObject {
         super.init()
         
         self.addApplicationObservers()
-        self.addSessionObservers()
         self.addDeviceObservers()
     }
     
