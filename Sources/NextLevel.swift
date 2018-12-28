@@ -3144,6 +3144,9 @@ extension NextLevel {
     }
     
     @objc internal func handleSessionRuntimeError(_ notification: Notification) {
+        DispatchQueue.main.async {
+            self.delegate?.nextLevelSessionSessionRuntimeError(self, notification: notification)
+        }
         self.executeClosureAsyncOnSessionQueueIfNecessary {
             if let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError {
                 switch error.code {
