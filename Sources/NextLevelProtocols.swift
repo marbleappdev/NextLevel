@@ -52,9 +52,6 @@ public let NextLevelPhotoThumbnailKey = "NextLevelPhotoThumbnailKey"
 /// NextLevel delegate, provides updates for authorization, configuration changes, session state, preview state, and mode changes.
 public protocol NextLevelDelegate: AnyObject {
     
-    // permission
-    func nextLevel(_ nextLevel: NextLevel, didUpdateAuthorizationStatus status: NextLevelAuthorizationStatus, forMediaType mediaType: AVMediaType)
-    
     // configuration
     func nextLevel(_ nextLevel: NextLevel, didUpdateVideoConfiguration videoConfiguration: NextLevelVideoConfiguration)
     func nextLevel(_ nextLevel: NextLevel, didUpdateAudioConfiguration audioConfiguration: NextLevelAudioConfiguration)
@@ -68,6 +65,7 @@ public protocol NextLevelDelegate: AnyObject {
     // session interruption
     func nextLevelSessionWasInterrupted(_ nextLevel: NextLevel)
     func nextLevelSessionInterruptionEnded(_ nextLevel: NextLevel)
+    func nextLevelSessionSessionRuntimeError(_ nextLevel: NextLevel, notification: Notification)
     
     // audio session
     func nextLevelAudioSessionWillStart(_ nextLevel: NextLevel)

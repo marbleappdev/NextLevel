@@ -2,7 +2,7 @@
 
 `NextLevel` is a [Swift](https://developer.apple.com/swift/) camera system designed for easy integration, customized media capture, and image streaming in iOS. Integration can optionally leverage `AVFoundation` or `ARKit`.
 
-[![Build Status](https://travis-ci.org/NextLevel/NextLevel.svg?branch=master)](https://travis-ci.org/NextLevel/NextLevel) [![Pod Version](https://img.shields.io/cocoapods/v/NextLevel.svg?style=flat)](http://cocoadocs.org/docsets/NextLevel/) [![Swift Version](https://img.shields.io/badge/language-swift%204.2-brightgreen.svg)](https://developer.apple.com/swift) [![GitHub license](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://github.com/NextLevel/NextLevel/blob/master/LICENSE) [![Downloads](https://img.shields.io/cocoapods/dt/NextLevel.svg?style=flat)](http://cocoapods.org/pods/NextLevel)
+[![Build Status](https://travis-ci.org/NextLevel/NextLevel.svg?branch=master)](https://travis-ci.org/NextLevel/NextLevel) [![Pod Version](https://img.shields.io/cocoapods/v/NextLevel.svg?style=flat)](http://cocoadocs.org/docsets/NextLevel/) [![Swift Version](https://img.shields.io/badge/language-swift%205.0-brightgreen.svg)](https://developer.apple.com/swift) [![GitHub license](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://github.com/NextLevel/NextLevel/blob/master/LICENSE)
 
 |  | Features |
 |:---------:|:---------------------------------------------------------------|
@@ -22,24 +22,23 @@
 | &#9881; | configurable encoding and compression settings |
 | &#128736; | simple media capture and editing API |
 | &#127744; | extensible API for image processing and CV |
+| &#128008; | animated GIF creator |
 | &#128526; | face recognition; qr- and bar-codes recognition |
-| &#128038; | [Swift 4](https://developer.apple.com/swift/) |
+| &#128038; | [Swift 5](https://developer.apple.com/swift/) |
 
 Need a different version of Swift?
-* `4.2` - Target your Podfile to the latest release or master
-* `4.0` - Target your Podfile to the `swift4.0` branch
-* `3.2` - Target your Podfile to the `swift3.2` branch
+* `5.0` - Target your Podfile to the latest release or master
+* `4.2` - Target your Podfile to the `swift4.2` branch
 
 ## Quick Start
 
 ```ruby
 
 # CocoaPods
-swift_version = "4.2"
-pod "NextLevel", "~> 0.13.0"
+pod "NextLevel", "~> 0.15.1"
 
 # Carthage
-github "nextlevel/NextLevel" ~> 0.13.0
+github "nextlevel/NextLevel" ~> 0.15.1
 
 # Swift PM
 let package = Package(
@@ -65,7 +64,7 @@ If you use Cocoapods, you can include `-D USE_ARKIT` or `-D USE_TRUE_DEPTH` with
     # setup NextLevel for ARKit use
     if target.name == 'NextLevel'
       target.build_configurations.each do |config|
-        config.build_settings['OTHER_SWIFT_FLAGS'] = '$(inherited) -D USE_ARKIT'
+        config.build_settings['OTHER_SWIFT_FLAGS'] = ['$(inherited)', '-DUSE_ARKIT']
       end
     end
   end
@@ -112,7 +111,7 @@ override func viewDidLoad() {
     NextLevel.shared.deviceDelegate = self
     NextLevel.shared.videoDelegate = self
     NextLevel.shared.photoDelegate = self
-    
+
     // modify .videoConfiguration, .audioConfiguration, .photoConfiguration properties
     // Compression, resolution, and maximum recording time options are available
     NextLevel.shared.videoConfiguration.maximumCaptureDuration = CMTimeMakeWithSeconds(5, 600)
@@ -179,7 +178,7 @@ Videos can also be processed using the [NextLevelSessionExporter](https://github
 
 ## Custom Buffer Rendering
 
-‘NextLevel’ was designed for sample buffer analysis and custom modification in real-time along side a rich set of camera features. 
+‘NextLevel’ was designed for sample buffer analysis and custom modification in real-time along side a rich set of camera features.
 
 Just to note, modifications performed on a buffer and provided back to NextLevel may potentially effect frame rate.
 
@@ -193,7 +192,7 @@ Optional hook that allows reading `sampleBuffer` for analysis.
 
 ```swift
 extension CameraViewController: NextLevelVideoDelegate {
-    
+
     // ...
 
     // video frame processing
@@ -230,11 +229,11 @@ NextLevel was initally a weekend project that has now grown into a open communit
 
 The goal is to continue to provide a good foundation for quick integration (enabling projects to be taken to the next level) – allowing focus to placed on functionality that matters most whether it's realtime image processing, computer vision methods, augmented reality, or [computational photography](https://om.co/2018/07/23/even-leica-loves-computational-photography/).
 
-# ARKit
+## ARKit
 
-NextLevel provides beta ARKit capture in addition to AVFoundation. This enables a variety of new camera features while leveraging the existing recording capabilities and media management of NextLevel.
+NextLevel provides components for capturing ARKit video and photo. This enables a variety of new camera features while leveraging the existing recording capabilities and media management of NextLevel.
 
-An example of ARKit mode can be found in the NextLevel [examples](https://github.com/NextLevel/examples) repository, there are a couple more components coming that I haven’t added yet – watch this space.
+If you are trying to capture frames from SceneKit for ARKit recording, check out the [examples](https://github.com/NextLevel/examples) project.
 
 ## Documentation
 

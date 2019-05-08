@@ -511,7 +511,7 @@ extension NextLevel {
     ///
     /// - Parameter mediaType: Specified media type (i.e. AVMediaTypeVideo, AVMediaTypeAudio, etc.)
     /// - Returns: Authorization status for the desired media type.
-    public func authorizationStatus(forMediaType mediaType: AVMediaType) -> NextLevelAuthorizationStatus {
+    public static func authorizationStatus(forMediaType mediaType: AVMediaType) -> NextLevelAuthorizationStatus {
         let status = AVCaptureDevice.authorizationStatus(for: mediaType)
         var nextLevelStatus: NextLevelAuthorizationStatus = .notDetermined
         switch status {
@@ -523,38 +523,43 @@ extension NextLevel {
             break
         case .notDetermined:
             break
+        @unknown default:
+            debugPrint("unknown authorization type")
+            break
         }
         return nextLevelStatus
     }
     
     /// Requests authorization permission.
     ///
-    /// - Parameter mediaType: Specified media type (i.e. AVMediaTypeVideo, AVMediaTypeAudio, etc.)
-    public func requestAuthorization(forMediaType mediaType: AVMediaType) {
+    /// - Parameters:
+    ///   - mediaType: Specified media type (i.e. AVMediaTypeVideo, AVMediaTypeAudio, etc.)
+    ///   - completionHandler: A block called with the responding access request result
+    public static func requestAuthorization(forMediaType mediaType: AVMediaType, completionHandler: @escaping ((AVMediaType, NextLevelAuthorizationStatus) -> Void) ) {
         AVCaptureDevice.requestAccess(for: mediaType) { (granted: Bool) in
-            let status: NextLevelAuthorizationStatus = (granted == true) ? .authorized : .notAuthorized
+            // According to documentation, requestAccess runs on an arbitary queue
             DispatchQueue.main.async {
-                self.delegate?.nextLevel(self, didUpdateAuthorizationStatus: status, forMediaType: mediaType)
+                completionHandler(mediaType, (granted ? .authorized : .notAuthorized))
             }
         }
     }
     
-    internal func authorizationStatusForCurrentCameraMode() -> NextLevelAuthorizationStatus {
+    internal func authorizationStatusForCurrentCaptureMode() -> NextLevelAuthorizationStatus {
         switch self.captureMode {
         case .audio:
-            return self.authorizationStatus(forMediaType: AVMediaType.audio)
+            return NextLevel.authorizationStatus(forMediaType: AVMediaType.audio)
         case .videoWithoutAudio:
-            return self.authorizationStatus(forMediaType: AVMediaType.video)
+            return NextLevel.authorizationStatus(forMediaType: AVMediaType.video)
         case .arKit:
             fallthrough
         case .movie:
             fallthrough
         case .video:
-            let audioStatus = self.authorizationStatus(forMediaType: AVMediaType.audio)
-            let videoStatus = self.authorizationStatus(forMediaType: AVMediaType.video)
+            let audioStatus = NextLevel.authorizationStatus(forMediaType: AVMediaType.audio)
+            let videoStatus = NextLevel.authorizationStatus(forMediaType: AVMediaType.video)
             return (audioStatus == .authorized && videoStatus == .authorized) ? .authorized : .notAuthorized
         case .photo:
-            return self.authorizationStatus(forMediaType: AVMediaType.video)
+            return NextLevel.authorizationStatus(forMediaType: AVMediaType.video)
         }
     }
 }
@@ -567,22 +572,20 @@ extension NextLevel {
     ///
     /// - Throws: 'NextLevelError.authorization' when permissions are not authorized, 'NextLevelError.started' when the session has already started.
     public func start() throws {
-        guard self.authorizationStatusForCurrentCameraMode() == .authorized else {
-                throw NextLevelError.authorization
+        guard self.authorizationStatusForCurrentCaptureMode() == .authorized else {
+            throw NextLevelError.authorization
         }
         
         if self.captureMode == .arKit {
             if #available(iOS 11.0, *) {
                 setupARSession()
             }
-            return
+        } else {
+            guard self._captureSession == nil else {
+                throw NextLevelError.started
+            }
+            setupAVSession()
         }
-        
-        guard self._captureSession == nil else {
-            throw NextLevelError.started
-        }
-        
-        setupAVSession()
     }
     
     /// Stops the current recording session.
@@ -1152,10 +1155,9 @@ extension NextLevel {
         movieFileOutputConnection.videoOrientation = self.deviceOrientation
         
         var videoSettings: [String: Any] = [:]
-        let codec = AVVideoCodecType(rawValue: self.videoConfiguration.codec)
         if let availableVideoCodecTypes = self._movieFileOutput?.availableVideoCodecTypes,
-            availableVideoCodecTypes.contains(codec) {
-            videoSettings[AVVideoCodecKey] = codec
+            availableVideoCodecTypes.contains(self.videoConfiguration.codec) {
+            videoSettings[AVVideoCodecKey] = self.videoConfiguration.codec
         }
         self._movieFileOutput?.setOutputSettings(videoSettings, for: movieFileOutputConnection)
         
@@ -2369,11 +2371,10 @@ extension NextLevel {
                 
                 // add JPEG, thumbnail
                 
-                if let context = self._ciContext,
-                    let photo = context.uiimage(withPixelBuffer: customFrame) {
+                if let photo = self._ciContext?.uiimage(withPixelBuffer: customFrame) {
                     let croppedPhoto = ratio != nil ? photo.nx_croppedImage(to: ratio!) : photo
                     if let imageData = photo.jpegData(compressionQuality: 1),
-                        let croppedImageData = croppedPhoto.jpegData(compressionQuality: 1){
+                        let croppedImageData = croppedPhoto.jpegData(compressionQuality: 1) {
                         if photoDict == nil {
                             photoDict = [:]
                         }
@@ -2381,6 +2382,7 @@ extension NextLevel {
                         photoDict?[NextLevelPhotoCroppedJPEGKey] = croppedImageData
                     }
                 }
+                
             } else if let videoFrame = self._lastVideoFrame {
                 
                 // append exif metadata
@@ -2393,8 +2395,7 @@ extension NextLevel {
                 }
                 
                 // add JPEG, thumbnail
-                if let context = self._ciContext,
-                    let photo = context.uiimage(withSampleBuffer: videoFrame) {
+                if let photo = self._ciContext?.uiimage(withSampleBuffer: videoFrame) {
                     let croppedPhoto = ratio != nil ? photo.nx_croppedImage(to: ratio!) : photo
                     if let imageData = photo.jpegData(compressionQuality: 1),
                         let croppedImageData = croppedPhoto.jpegData(compressionQuality: 1){
@@ -2800,14 +2801,17 @@ extension NextLevel {
 extension NextLevel {
     
     private func setupContextIfNecessary() {
-        if self._ciContext == nil {
-            let options : [CIContextOption : Any] = [CIContextOption.workingColorSpace : CGColorSpaceCreateDeviceRGB(),
-                                                     CIContextOption.useSoftwareRenderer : NSNumber(booleanLiteral: false)]
-            if let device = MTLCreateSystemDefaultDevice() {
-                self._ciContext = CIContext(mtlDevice: device, options: options)
-            } else if let eaglContext = EAGLContext(api: .openGLES2) {
-                self._ciContext = CIContext(eaglContext: eaglContext, options: options)
-            }
+        guard self._ciContext == nil else {
+            return
+        }
+        
+        let options : [CIContextOption : Any] = [.outputColorSpace : CGColorSpaceCreateDeviceRGB(),
+                                                 .outputPremultiplied: true,
+                                                 .useSoftwareRenderer : NSNumber(booleanLiteral: false)]
+        if let device = MTLCreateSystemDefaultDevice() {
+            self._ciContext = CIContext(mtlDevice: device, options: options)
+        } else if let eaglContext = EAGLContext(api: .openGLES2) {
+            self._ciContext = CIContext(eaglContext: eaglContext, options: options)
         }
     }
     
@@ -3027,6 +3031,7 @@ extension NextLevel {
         
         // TODO: support orientation changes, maybe use snapshot API instead
         self.setupPixelBufferPoolIfNecessary(pixelBuffer)
+        
         if let pixelBufferPool = self._pixelBufferPool,
             let adjustedPixelBuffer = self._ciContext?.createPixelBuffer(fromPixelBuffer: pixelBuffer, withOrientation: .right, pixelBufferPool: pixelBufferPool) {
             pixelBuffer = adjustedPixelBuffer

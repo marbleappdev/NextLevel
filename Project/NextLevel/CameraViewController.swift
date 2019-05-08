@@ -173,7 +173,6 @@ class CameraViewController: UIViewController {
         nextLevel.videoConfiguration.preset = AVCaptureSession.Preset.hd1280x720
         nextLevel.videoConfiguration.bitRate = 5500000
         nextLevel.videoConfiguration.maxKeyFrameInterval = 30
-        nextLevel.videoConfiguration.scalingMode = AVVideoScalingModeResizeAspectFill
         nextLevel.videoConfiguration.profileLevel = AVVideoProfileLevelH264HighAutoLevel
 
         // audio configuration
@@ -186,17 +185,44 @@ class CameraViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
-        let nextLevel = NextLevel.shared
-        if nextLevel.authorizationStatus(forMediaType: AVMediaType.video) == .authorized &&
-            nextLevel.authorizationStatus(forMediaType: AVMediaType.audio) == .authorized {
+        if NextLevel.authorizationStatus(forMediaType: AVMediaType.video) == .authorized &&
+           NextLevel.authorizationStatus(forMediaType: AVMediaType.audio) == .authorized {
             do {
-                try nextLevel.start()
+                try NextLevel.shared.start()
             } catch {
                 print("NextLevel, failed to start camera session")
             }
         } else {
-            nextLevel.requestAuthorization(forMediaType: AVMediaType.video)
-            nextLevel.requestAuthorization(forMediaType: AVMediaType.audio)
+            NextLevel.requestAuthorization(forMediaType: AVMediaType.video) { (mediaType, status) in
+                print("NextLevel, authorization updated for media \(mediaType) status \(status)")
+                if NextLevel.authorizationStatus(forMediaType: AVMediaType.video) == .authorized &&
+                    NextLevel.authorizationStatus(forMediaType: AVMediaType.audio) == .authorized {
+                    do {
+                        let nextLevel = NextLevel.shared
+                        try nextLevel.start()
+                    } catch {
+                        print("NextLevel, failed to start camera session")
+                    }
+                } else if status == .notAuthorized {
+                    // gracefully handle when audio/video is not authorized
+                    print("NextLevel doesn't have authorization for audio or video")
+                }
+            }
+            NextLevel.requestAuthorization(forMediaType: AVMediaType.audio) { (mediaType, status) in
+                print("NextLevel, authorization updated for media \(mediaType) status \(status)")
+                if NextLevel.authorizationStatus(forMediaType: AVMediaType.video) == .authorized &&
+                    NextLevel.authorizationStatus(forMediaType: AVMediaType.audio) == .authorized {
+                    do {
+                        let nextLevel = NextLevel.shared
+                        try nextLevel.start()
+                    } catch {
+                        print("NextLevel, failed to start camera session")
+                    }
+                } else if status == .notAuthorized {
+                    // gracefully handle when audio/video is not authorized
+                    print("NextLevel doesn't have authorization for audio or video")
+                }
+            }
         }
     }
     
@@ -302,10 +328,17 @@ extension CameraViewController {
             })
             break
         case .authorized:
-            
             break
+        @unknown default:
+            fatalError("unknown authorization type")
         }
     }
+    
+}
+
+// MARK: - media utilities
+
+extension CameraViewController {
     
     internal func saveVideo(withURL url: URL) {
         PHPhotoLibrary.shared().performChanges({
@@ -339,6 +372,43 @@ extension CameraViewController {
             }
         })
     }
+    
+    internal func savePhoto(photoImage: UIImage) {
+        let NextLevelAlbumTitle = "NextLevel"
+        
+        PHPhotoLibrary.shared().performChanges({
+            
+            let albumAssetCollection = self.albumAssetCollection(withTitle: NextLevelAlbumTitle)
+            if albumAssetCollection == nil {
+                let changeRequest = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: NextLevelAlbumTitle)
+                let _ = changeRequest.placeholderForCreatedAssetCollection
+            }
+            
+        }, completionHandler: { (success1: Bool, error1: Error?) in
+            
+            if success1 == true {
+                if let albumAssetCollection = self.albumAssetCollection(withTitle: NextLevelAlbumTitle) {
+                    PHPhotoLibrary.shared().performChanges({
+                        let assetChangeRequest = PHAssetChangeRequest.creationRequestForAsset(from: photoImage)
+                        let assetCollectionChangeRequest = PHAssetCollectionChangeRequest(for: albumAssetCollection)
+                        let enumeration: NSArray = [assetChangeRequest.placeholderForCreatedAsset!]
+                        assetCollectionChangeRequest?.addAssets(enumeration)
+                    }, completionHandler: { (success2: Bool, error2: Error?) in
+                        if success2 == true {
+                            let alertController = UIAlertController(title: "Photo Saved!", message: "Saved to the camera roll.", preferredStyle: .alert)
+                            let okAction = UIAlertAction(title: "OK", style: .default, handler: nil)
+                            alertController.addAction(okAction)
+                            self.present(alertController, animated: true, completion: nil)
+                        }
+                    })
+                }
+            } else if let _ = error1 {
+                print("failure capturing photo from video frame \(String(describing: error1))")
+            }
+            
+        })
+    }
+    
 }
 
 // MARK: - UIButton
@@ -421,18 +491,6 @@ extension CameraViewController: NextLevelDelegate {
 
     // permission
     func nextLevel(_ nextLevel: NextLevel, didUpdateAuthorizationStatus status: NextLevelAuthorizationStatus, forMediaType mediaType: AVMediaType) {
-        print("NextLevel, authorization updated for media \(mediaType) status \(status)")
-        if nextLevel.authorizationStatus(forMediaType: AVMediaType.video) == .authorized &&
-            nextLevel.authorizationStatus(forMediaType: AVMediaType.audio) == .authorized {
-            do {
-                try nextLevel.start()
-            } catch {
-                print("NextLevel, failed to start camera session")
-            }
-        } else if status == .notAuthorized {
-            // gracefully handle when audio/video is not authorized
-            print("NextLevel doesn't have authorization for audio or video")
-        }
     }
     
     // configuration
@@ -617,47 +675,11 @@ extension CameraViewController: NextLevelVideoDelegate {
     // video frame photo
 
     func nextLevel(_ nextLevel: NextLevel, didCompletePhotoCaptureFromVideoFrame photoDict: [String : Any]?) {
-        
         if let dictionary = photoDict,
-            let photoData = dictionary[NextLevelPhotoJPEGKey] {
-            
-            PHPhotoLibrary.shared().performChanges({
-                
-                let albumAssetCollection = self.albumAssetCollection(withTitle: NextLevelAlbumTitle)
-                if albumAssetCollection == nil {
-                    let changeRequest = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: NextLevelAlbumTitle)
-                    let _ = changeRequest.placeholderForCreatedAssetCollection
-                }
-            
-            }, completionHandler: { (success1: Bool, error1: Error?) in
-                
-                if success1 == true {
-                    if let albumAssetCollection = self.albumAssetCollection(withTitle: NextLevelAlbumTitle) {
-                        PHPhotoLibrary.shared().performChanges({
-                            if let data = photoData as? Data,
-                                let photoImage = UIImage(data: data) {
-                                let assetChangeRequest = PHAssetChangeRequest.creationRequestForAsset(from: photoImage)
-                                let assetCollectionChangeRequest = PHAssetCollectionChangeRequest(for: albumAssetCollection)
-                                let enumeration: NSArray = [assetChangeRequest.placeholderForCreatedAsset!]
-                                assetCollectionChangeRequest?.addAssets(enumeration)
-                            }
-                        }, completionHandler: { (success2: Bool, error2: Error?) in
-                            if success2 == true {
-                                let alertController = UIAlertController(title: "Photo Saved!", message: "Saved to the camera roll.", preferredStyle: .alert)
-                                let okAction = UIAlertAction(title: "OK", style: .default, handler: nil)
-                                alertController.addAction(okAction)
-                                self.present(alertController, animated: true, completion: nil)
-                            }
-                        })
-                    }
-                } else if let _ = error1 {
-                    print("failure capturing photo from video frame \(String(describing: error1))")
-                }
-                
-            })
-        
+            let photoData = dictionary[NextLevelPhotoJPEGKey] as? Data,
+            let photoImage = UIImage(data: photoData) {
+            self.savePhoto(photoImage: photoImage)
         }
-        
     }
     
 }
