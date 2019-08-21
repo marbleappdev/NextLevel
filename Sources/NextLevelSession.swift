@@ -352,6 +352,13 @@ extension NextLevelSession {
         self._currentClipDuration = CMTime.zero
         self._currentClipHasVideo = false
         self._currentClipHasAudio = false
+        
+        self._videoInput = nil
+        self._audioInput = nil
+        self._pixelBufferAdapter = nil
+
+        self._videoConfiguration = nil
+        self._audioConfiguration = nil
     }
 }
 
@@ -524,6 +531,11 @@ extension NextLevelSession {
     public func beginClip() {
         self.executeClosureSyncOnSessionQueueIfNecessary {
             if self._writer == nil {
+                // The transform specified in the output file as the preferred transformation of the visual media data for display purposes.
+                if let videoInput = self._videoInput,
+                    let configuration = self._videoConfiguration {
+                    videoInput.transform = configuration.transform
+                }
                 self.setupWriter()
                 self._currentClipDuration = CMTime.zero
                 self._currentClipHasAudio = false
